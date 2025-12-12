@@ -21,6 +21,17 @@ struct ContentView: View {
         filteredTasks.filter { $0.isCompleted }
     }
 
+    // Group incomplete tasks by project
+    var tasksByProject: [String: [ThingsTask]] {
+        Dictionary(grouping: incompleteTasks) { task in
+            task.project ?? task.area ?? "No Project"
+        }
+    }
+
+    var sortedProjectNames: [String] {
+        tasksByProject.keys.sorted()
+    }
+
     var body: some View {
         ZStack {
             // Background with subtle gradient
@@ -60,13 +71,17 @@ struct ContentView: View {
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 0) {
-                            // Incomplete tasks
+                            // Tasks grouped by project
                             if !incompleteTasks.isEmpty {
-                                TasksSection(
-                                    title: nil,
-                                    tasks: incompleteTasks,
-                                    dataService: dataService
-                                )
+                                ForEach(sortedProjectNames, id: \.self) { projectName in
+                                    if let tasks = tasksByProject[projectName] {
+                                        TasksSection(
+                                            title: projectName,
+                                            tasks: tasks,
+                                            dataService: dataService
+                                        )
+                                    }
+                                }
                             }
 
                             // Completed tasks (collapsible)
@@ -155,20 +170,19 @@ struct HeaderView: View {
 
 // MARK: - Tasks Section
 struct TasksSection: View {
-    let title: String?
+    let title: String
     let tasks: [ThingsTask]
     let dataService: ThingsDataService
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let title = title {
-                Text(title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.secondary)
-                    .textCase(.uppercase)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-            }
+            // Project name header
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.primary)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 4)
 
             ForEach(tasks) { task in
                 TaskRowView(

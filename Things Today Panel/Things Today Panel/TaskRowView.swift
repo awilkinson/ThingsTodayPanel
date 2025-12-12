@@ -18,59 +18,13 @@ struct TaskRowView: View {
                     }
                 }
 
-                // Task content
-                VStack(alignment: .leading, spacing: 4) {
-                    // Title
-                    Text(task.title)
-                        .font(.system(size: 14, weight: task.isCompleted ? .regular : .medium))
-                        .foregroundColor(task.isCompleted ? .secondary : .primary)
-                        .strikethrough(task.isCompleted, color: .secondary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-
-                    // Metadata row
-                    HStack(spacing: 8) {
-                        // Project/Area
-                        if let project = task.displayProject {
-                            Label(project, systemImage: "folder.fill")
-                                .font(.system(size: 11))
-                                .foregroundColor(.thingsSecondary)
-                        }
-
-                        // Deadline
-                        if task.hasDeadline {
-                            DeadlineLabel(deadline: task.deadline!, isOverdue: task.isOverdue)
-                        }
-
-                        // Checklist progress
-                        if let checklist = task.checklist {
-                            let completed = checklist.filter { $0.completed }.count
-                            Label("\(completed)/\(checklist.count)", systemImage: "checklist")
-                                .font(.system(size: 11))
-                                .foregroundColor(.thingsSecondary)
-                        }
-
-                        // Tags
-                        if !task.tags.isEmpty {
-                            HStack(spacing: 4) {
-                                ForEach(task.tags.prefix(2), id: \.self) { tag in
-                                    Text("#\(tag)")
-                                        .font(.system(size: 10, weight: .medium))
-                                        .foregroundColor(.thingsBlue.opacity(0.8))
-                                }
-                            }
-                        }
-                    }
-
-                    // Notes preview
-                    if let notes = task.notes, !notes.isEmpty, !task.isCompleted {
-                        Text(notes)
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary.opacity(0.8))
-                            .lineLimit(2)
-                            .padding(.top, 2)
-                    }
-                }
+                // Task content - title only
+                Text(task.title)
+                    .font(.system(size: 14, weight: task.isCompleted ? .regular : .medium))
+                    .foregroundColor(task.isCompleted ? .secondary : .primary)
+                    .strikethrough(task.isCompleted, color: .secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.vertical, 10)
