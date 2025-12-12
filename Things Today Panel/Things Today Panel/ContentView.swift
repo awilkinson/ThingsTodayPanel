@@ -45,6 +45,13 @@ struct ContentView: View {
                 Divider()
                     .opacity(0.3)
 
+                // Error banner
+                if let errorMessage = dataService.errorMessage {
+                    ErrorBannerView(message: errorMessage, onDismiss: {
+                        dataService.errorMessage = nil
+                    })
+                }
+
                 // Task list
                 if dataService.isLoading && dataService.tasks.isEmpty {
                     LoadingView()
@@ -310,6 +317,41 @@ struct FooterView: View {
                 isHovered = hovering
             }
         }
+    }
+}
+
+// MARK: - Error Banner View
+struct ErrorBannerView: View {
+    let message: String
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 14))
+                .foregroundColor(.orange)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Error Loading Tasks")
+                    .font(.system(size: 12, weight: .semibold))
+
+                Text(message)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(PlainButtonStyle())
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color.orange.opacity(0.1))
     }
 }
 
