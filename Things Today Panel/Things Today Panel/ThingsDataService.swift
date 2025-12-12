@@ -115,10 +115,8 @@ class ThingsDataService: ObservableObject {
                 let errorMessage = error["NSAppleScriptErrorMessage"] as? String ?? "Unknown error"
 
                 var friendlyMessage = errorMessage
-                if errorCode == -600 {
-                    friendlyMessage = "Things is not running. Attempting to launch..."
-                } else if errorCode == -1743 {
-                    friendlyMessage = "Permission denied. Please grant Automation access in System Settings → Privacy & Security → Automation."
+                if errorCode == -600 || errorCode == -1743 {
+                    friendlyMessage = "Permission needed: Open System Settings → Privacy & Security → Automation → Enable 'Things Today Panel' to control Things3. Then restart this app."
                 }
 
                 throw NSError(

@@ -326,28 +326,49 @@ struct ErrorBannerView: View {
     let onDismiss: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 14))
-                .foregroundColor(.orange)
+        VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 14))
+                    .foregroundColor(.orange)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Error Loading Tasks")
-                    .font(.system(size: 12, weight: .semibold))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Error Loading Tasks")
+                        .font(.system(size: 12, weight: .semibold))
 
-                Text(message)
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    Text(message)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(PlainButtonStyle())
             }
 
-            Spacer()
-
-            Button(action: onDismiss) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.secondary)
+            // Show "Open Settings" button if it's a permission error
+            if message.contains("Permission needed") {
+                Button(action: {
+                    // Open System Settings to Privacy & Security
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }) {
+                    Text("Open System Settings")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.orange)
+                        .cornerRadius(6)
+                }
+                .buttonStyle(PlainButtonStyle())
             }
-            .buttonStyle(PlainButtonStyle())
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
