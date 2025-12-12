@@ -168,17 +168,6 @@ class ThingsDataService: ObservableObject {
     }
 }
 
-// MARK: - String Extension for FourCharCode
-extension String {
-    var fourCharCodeValue: FourCharCode {
-        var result: FourCharCode = 0
-        for char in self.utf8 {
-            result = result << 8 + FourCharCode(char)
-        }
-        return result
-    }
-}
-
 // MARK: - SQLite Helper
 class SQLiteHelper {
     static func queryTodayTasks(at dbPath: URL) throws -> [ThingsTask] {
