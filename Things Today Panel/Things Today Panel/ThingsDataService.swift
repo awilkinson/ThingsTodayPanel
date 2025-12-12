@@ -53,6 +53,35 @@ class ThingsDataService: ObservableObject {
     }
 
     private func queryThingsWithAppleScript() throws -> [ThingsTask] {
+        // First, make sure Things is running
+        let workspace = NSWorkspace.shared
+        let thingsRunning = workspace.runningApplications.contains { app in
+            app.bundleIdentifier == "com.culturedcode.ThingsMac"
+        }
+
+        if !thingsRunning {
+            // Launch Things
+            if let thingsURL = workspace.urlForApplication(withBundleIdentifier: "com.culturedcode.ThingsMac") {
+                do {
+                    try workspace.openApplication(at: thingsURL, configuration: NSWorkspace.OpenConfiguration())
+                    // Give Things a moment to launch
+                    Thread.sleep(forTimeInterval: 1.0)
+                } catch {
+                    throw NSError(
+                        domain: "ThingsDataService",
+                        code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: "Failed to launch Things: \(error.localizedDescription)"]
+                    )
+                }
+            } else {
+                throw NSError(
+                    domain: "ThingsDataService",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Things 3 is not installed. Please install Things from the Mac App Store."]
+                )
+            }
+        }
+
         // AppleScript to get today's tasks from Things
         let script = """
         tell application "Things3"
@@ -81,10 +110,21 @@ class ThingsDataService: ObservableObject {
             let output = scriptObject.executeAndReturnError(&error)
 
             if let error = error {
+                // Extract meaningful error message
+                let errorCode = error["NSAppleScriptErrorNumber"] as? Int ?? 0
+                let errorMessage = error["NSAppleScriptErrorMessage"] as? String ?? "Unknown error"
+
+                var friendlyMessage = errorMessage
+                if errorCode == -600 {
+                    friendlyMessage = "Things is not running. Attempting to launch..."
+                } else if errorCode == -1743 {
+                    friendlyMessage = "Permission denied. Please grant Automation access in System Settings → Privacy & Security → Automation."
+                }
+
                 throw NSError(
                     domain: "ThingsDataService",
                     code: 2,
-                    userInfo: [NSLocalizedDescriptionKey: "AppleScript error: \(error)"]
+                    userInfo: [NSLocalizedDescriptionKey: friendlyMessage]
                 )
             }
 
