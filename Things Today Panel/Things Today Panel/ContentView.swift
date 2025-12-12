@@ -15,7 +15,7 @@ struct ContentView: View {
 
     var incompleteTasks: [ThingsTask] {
         filteredTasks.filter { task in
-            !task.isCompleted && (task.project == "Computer" || task.project == "Deep Work")
+            !task.isCompleted && (task.project == "💻 Computer" || task.project == "⏳ Deep Work")
         }
     }
 
@@ -31,7 +31,7 @@ struct ContentView: View {
     }
 
     var sortedProjectNames: [String] {
-        let customOrder = ["Computer", "Deep Work", "Home", "Out and About", "Calls"]
+        let customOrder = ["💻 Computer", "⏳ Deep Work", "🏠 Home", "🚗 Out and About", "Calls"]
         let projectNames = Array(tasksByProject.keys)
 
         // Sort with custom order first, then alphabetically for others
