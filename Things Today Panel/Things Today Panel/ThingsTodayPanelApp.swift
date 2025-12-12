@@ -64,7 +64,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func showOnboarding() {
-        let onboardingView = OnboardingView(isPresented: .constant(true))
+        // Create a binding that closes the window when set to false
+        let binding = Binding<Bool>(
+            get: { true },
+            set: { [weak self] newValue in
+                if !newValue {
+                    self?.onboardingWindow?.close()
+                    self?.onboardingWindow = nil
+                    self?.showFloatingPanel()
+                }
+            }
+        )
+
+        let onboardingView = OnboardingView(isPresented: binding)
 
         let hostingController = NSHostingController(rootView: onboardingView)
         onboardingWindow = NSWindow(contentViewController: hostingController)
@@ -75,13 +87,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         onboardingWindow?.makeKeyAndOrderFront(nil)
         onboardingWindow?.level = .floating
 
-        // When onboarding closes, show main panel
+        // When onboarding closes manually, show main panel
         NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
             object: onboardingWindow,
             queue: .main
         ) { [weak self] _ in
-            self?.showFloatingPanel()
+            if self?.floatingPanel == nil {
+                self?.showFloatingPanel()
+            }
         }
     }
 
