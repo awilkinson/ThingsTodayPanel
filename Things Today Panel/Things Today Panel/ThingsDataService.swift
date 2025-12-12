@@ -83,8 +83,12 @@ class ThingsDataService: ObservableObject {
         }
 
         // AppleScript to get today's tasks from Things
+        // Note: We activate Things first to ensure it's ready to respond
         let script = """
         tell application "Things3"
+            activate
+            delay 0.5
+
             set todayTodos to to dos of list "Today"
             set taskList to {}
 
