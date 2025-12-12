@@ -29,7 +29,25 @@ struct ContentView: View {
     }
 
     var sortedProjectNames: [String] {
-        tasksByProject.keys.sorted()
+        let customOrder = ["Computer", "Deep Work", "Home", "Out and About", "Calls"]
+        let projectNames = Array(tasksByProject.keys)
+
+        // Sort with custom order first, then alphabetically for others
+        return projectNames.sorted { proj1, proj2 in
+            let index1 = customOrder.firstIndex(of: proj1)
+            let index2 = customOrder.firstIndex(of: proj2)
+
+            switch (index1, index2) {
+            case let (i1?, i2?):
+                return i1 < i2  // Both in custom order
+            case (_?, nil):
+                return true     // proj1 in custom order, proj2 not
+            case (nil, _?):
+                return false    // proj2 in custom order, proj1 not
+            case (nil, nil):
+                return proj1 < proj2  // Neither in custom order, sort alphabetically
+            }
+        }
     }
 
     var body: some View {
