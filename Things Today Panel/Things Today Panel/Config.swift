@@ -17,11 +17,12 @@ struct ThingsConfig {
     // Data source preference
     enum DataSource {
         case appleScript  // Uses AppleScript to query Things directly
+        case sqlite       // Uses direct SQLite database access (recommended)
         case urlScheme    // Uses Things URL scheme (limited functionality)
         case mcpServer    // Uses Things MCP server (if available)
     }
 
-    static let dataSource: DataSource = .appleScript
+    static let dataSource: DataSource = .sqlite
 
     // Refresh interval in seconds (from UserDefaults, default 60)
     static var refreshInterval: TimeInterval {

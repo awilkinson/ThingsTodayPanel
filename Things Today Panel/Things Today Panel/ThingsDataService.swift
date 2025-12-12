@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import AppKit
+import SQLite
 
 class ThingsDataService: ObservableObject {
     @Published var tasks: [ThingsTask] = []
@@ -25,8 +26,20 @@ class ThingsDataService: ObservableObject {
         isLoading = true
         errorMessage = nil
 
-        // Use AppleScript to get today's tasks from Things
-        fetchFromThingsAppleScript()
+        // Use data source from configuration
+        switch ThingsConfig.dataSource {
+        case .sqlite:
+            fetchFromSQLite()
+        case .appleScript:
+            fetchFromThingsAppleScript()
+        case .urlScheme, .mcpServer:
+            // Future implementation
+            DispatchQueue.main.async {
+                self.errorMessage = "This data source is not yet implemented"
+                self.isLoading = false
+                self.tasks = SQLiteHelper.mockTasks()
+            }
+        }
     }
 
     private func fetchFromThingsAppleScript() {
@@ -39,6 +52,30 @@ class ThingsDataService: ObservableObject {
                 DispatchQueue.main.async {
                     self.tasks = tasks
                     self.isLoading = false
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.errorMessage = "Failed to load tasks: \(error.localizedDescription)"
+                    self.isLoading = false
+
+                    // Fallback to mock data for testing
+                    self.tasks = SQLiteHelper.mockTasks()
+                }
+            }
+        }
+    }
+
+    private func fetchFromSQLite() {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            do {
+                let tasks = try SQLiteHelper.queryTodayTasks()
+
+                DispatchQueue.main.async {
+                    self.tasks = tasks
+                    self.isLoading = false
+                    self.errorMessage = nil
                 }
             } catch {
                 DispatchQueue.main.async {
@@ -210,19 +247,219 @@ class ThingsDataService: ObservableObject {
     }
 }
 
+// MARK: - SQLite Error
+enum SQLiteError: LocalizedError {
+    case databaseNotFound
+    case databaseLocked
+    case queryFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .databaseNotFound:
+            return "Things database not found. Please make sure Things 3 is installed and has been launched at least once."
+        case .databaseLocked:
+            return "Things database is busy. Please try again in a moment."
+        case .queryFailed(let message):
+            return "Failed to query database: \(message)"
+        }
+    }
+}
+
 // MARK: - SQLite Helper
 class SQLiteHelper {
-    static func queryTodayTasks(at dbPath: URL) throws -> [ThingsTask] {
-        // This is a simplified version - you'll need to use SQLite.swift or similar
-        // to properly query the database
+    // MARK: - Table and Column Definitions
+    private static let tasks = Table("TMTask")
+    private static let tags = Table("TMTag")
+    private static let taskTags = Table("TMTaskTag")
+    private static let checklistItems = Table("TMChecklistItem")
+    private static let areas = Table("TMArea")
 
-        // Sample query structure (Things database schema):
-        // SELECT * FROM TMTask WHERE status = 0 AND start = 1 ORDER BY todayIndex
+    // TMTask columns
+    private static let uuid = Expression<String>("uuid")
+    private static let title = Expression<String>("title")
+    private static let notes = Expression<String?>("notes")
+    private static let status = Expression<Int64>("status")
+    private static let start = Expression<Int64>("start")
+    private static let todayIndex = Expression<Int64>("todayIndex")
+    private static let deadline = Expression<Int64?>("deadline")
+    private static let projectUuid = Expression<String?>("project")
+    private static let areaUuid = Expression<String?>("area")
+    private static let trashed = Expression<Int64>("trashed")
 
-        // For now, return mock data to test the UI
-        return mockTasks()
+    // Tag table columns
+    private static let tagUuid = Expression<String>("uuid")
+    private static let tagTitle = Expression<String>("title")
+
+    // Junction table columns
+    private static let taskTagTasks = Expression<String>("tasks")
+    private static let taskTagTags = Expression<String>("tags")
+
+    // Checklist columns
+    private static let checklistUuid = Expression<String>("uuid")
+    private static let checklistTitle = Expression<String>("title")
+    private static let checklistStatus = Expression<Int64>("status")
+    private static let checklistTask = Expression<String>("task")
+    private static let checklistIndex = Expression<Int64>("stopIndex")
+
+    // Area columns
+    private static let areaUuidCol = Expression<String>("uuid")
+    private static let areaTitleCol = Expression<String>("title")
+
+    // MARK: - Database Path Discovery
+    static func thingsDatabasePath() -> String? {
+        let groupContainer = FileManager.default
+            .containerURL(forSecurityApplicationGroupIdentifier: "JLMPQHK86H.com.culturedcode.ThingsMac")
+
+        guard let containerPath = groupContainer?.path else { return nil }
+
+        let fileManager = FileManager.default
+        guard let contents = try? fileManager.contentsOfDirectory(atPath: containerPath) else {
+            return nil
+        }
+
+        // Find directory starting with "ThingsData-"
+        for item in contents {
+            if item.hasPrefix("ThingsData-") {
+                let dbPath = "\(containerPath)/\(item)/Things Database.thingsdatabase/main.sqlite"
+                if fileManager.fileExists(atPath: dbPath) {
+                    return dbPath
+                }
+            }
+        }
+
+        return nil
     }
 
+    // MARK: - Main Query Method
+    static func queryTodayTasks(retries: Int = 3) throws -> [ThingsTask] {
+        var lastError: Error?
+
+        for attempt in 0..<retries {
+            do {
+                return try performQuery()
+            } catch let error as NSError where error.code == 5 { // SQLITE_BUSY
+                lastError = error
+                if attempt < retries - 1 {
+                    Thread.sleep(forTimeInterval: 0.1) // Wait 100ms before retry
+                }
+            } catch {
+                throw error // Rethrow non-lock errors immediately
+            }
+        }
+
+        throw lastError ?? SQLiteError.queryFailed("Max retries exceeded")
+    }
+
+    private static func performQuery() throws -> [ThingsTask] {
+        guard let dbPath = thingsDatabasePath() else {
+            throw SQLiteError.databaseNotFound
+        }
+
+        let db = try Connection(dbPath, readonly: true)
+
+        // Query today's tasks (status=0 incomplete, start=1 today, trashed=0)
+        let query = tasks
+            .filter(status == 0 && start == 1 && trashed == 0)
+            .order(todayIndex)
+
+        var result: [ThingsTask] = []
+
+        for row in try db.prepare(query) {
+            let taskUuid = row[uuid]
+
+            // Fetch related data
+            let taskTags = try fetchTags(for: taskUuid, db: db)
+            let checklist = try fetchChecklist(for: taskUuid, db: db)
+            let areaTitle = try fetchAreaTitle(for: row[areaUuid], db: db)
+            let projectTitle = try fetchProjectTitle(for: row[projectUuid], db: db)
+
+            // Convert deadline timestamp (Core Data Reference Date: 2001-01-01)
+            let deadlineDate = row[deadline].map { timestamp in
+                Date(timeIntervalSinceReferenceDate: TimeInterval(timestamp))
+            }
+
+            // Map status code to enum
+            let taskStatus: ThingsTask.TaskStatus
+            switch row[status] {
+            case 0: taskStatus = .incomplete
+            case 3: taskStatus = .completed
+            case 2: taskStatus = .canceled
+            default: taskStatus = .incomplete
+            }
+
+            let task = ThingsTask(
+                id: taskUuid,
+                title: row[title],
+                notes: row[notes],
+                status: taskStatus,
+                project: projectTitle,
+                area: areaTitle,
+                tags: taskTags,
+                deadline: deadlineDate,
+                when: "today",
+                checklist: checklist
+            )
+
+            result.append(task)
+        }
+
+        return result
+    }
+
+    // MARK: - Helper Query Methods
+    private static func fetchTags(for taskUuid: String, db: Connection) throws -> [String] {
+        let query = tags
+            .select(tagTitle)
+            .join(taskTags, on: tagUuid == taskTagTags)
+            .filter(taskTagTasks == taskUuid)
+
+        return try db.prepare(query).map { $0[tagTitle] }
+    }
+
+    private static func fetchChecklist(for taskUuid: String, db: Connection) throws -> [ChecklistItem]? {
+        let query = checklistItems
+            .filter(checklistTask == taskUuid)
+            .order(checklistIndex)
+
+        let items = try db.prepare(query).map { row in
+            ChecklistItem(
+                id: row[checklistUuid],
+                title: row[checklistTitle],
+                completed: row[checklistStatus] == 3 // 3 = completed
+            )
+        }
+
+        return items.isEmpty ? nil : items
+    }
+
+    private static func fetchAreaTitle(for uuid: String?, db: Connection) throws -> String? {
+        guard let uuid = uuid else { return nil }
+
+        let query = areas
+            .select(areaTitleCol)
+            .filter(areaUuidCol == uuid)
+
+        if let row = try db.prepare(query).makeIterator().next() {
+            return row[areaTitleCol]
+        }
+        return nil
+    }
+
+    private static func fetchProjectTitle(for uuid: String?, db: Connection) throws -> String? {
+        guard let uuid = uuid else { return nil }
+
+        // Projects are also stored in TMTask table
+        let projectQuery = tasks
+            .select(title)
+            .filter(self.uuid == uuid)
+
+        if let row = try db.prepare(projectQuery).makeIterator().next() {
+            return row[title]
+        }
+        return nil
+    }
+
+    // MARK: - Mock Data (for testing/fallback)
     static func mockTasks() -> [ThingsTask] {
         return [
             ThingsTask(

@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		1E2AD3DE2EEC701D00D409D6 /* SQLite in Frameworks */ = {isa = PBXBuildFile; productRef = 1E2AD3DD2EEC701D00D409D6 /* SQLite */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		1E86A5B12EEC59AB00F43573 /* Things Today Panel.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Things Today Panel.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1E2AD3DE2EEC701D00D409D6 /* SQLite in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +70,7 @@
 			);
 			name = "Things Today Panel";
 			packageProductDependencies = (
+				1E2AD3DD2EEC701D00D409D6 /* SQLite */,
 			);
 			productName = "Things Today Panel";
 			productReference = 1E86A5B12EEC59AB00F43573 /* Things Today Panel.app */;
@@ -95,6 +101,9 @@
 			);
 			mainGroup = 1E86A5A82EEC59AB00F43573;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				1E2AD3DC2EEC701D00D409D6 /* XCRemoteSwiftPackageReference "SQLite" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 1E86A5B22EEC59AB00F43573 /* Products */;
 			projectDirPath = "";
@@ -351,6 +360,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		1E2AD3DC2EEC701D00D409D6 /* XCRemoteSwiftPackageReference "SQLite" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/stephencelis/SQLite.swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.15.4;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		1E2AD3DD2EEC701D00D409D6 /* SQLite */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1E2AD3DC2EEC701D00D409D6 /* XCRemoteSwiftPackageReference "SQLite" */;
+			productName = SQLite;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 1E86A5A92EEC59AB00F43573 /* Project object */;
 }
