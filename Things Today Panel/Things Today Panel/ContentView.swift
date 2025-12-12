@@ -14,7 +14,9 @@ struct ContentView: View {
     }
 
     var incompleteTasks: [ThingsTask] {
-        filteredTasks.filter { !$0.isCompleted }
+        filteredTasks.filter { task in
+            !task.isCompleted && (task.project == "Computer" || task.project == "Deep Work")
+        }
     }
 
     var completedTasks: [ThingsTask] {
