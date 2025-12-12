@@ -75,23 +75,37 @@ This app follows Things' design principles:
 
 ## 🔧 Configuration
 
-### Things Database Access
+### Things Integration
 
-The app reads directly from Things' SQLite database:
-```
-~/Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac/
-```
+The app uses **AppleScript** to query Things directly - no database access required!
+
+**Setup Steps:**
+
+1. **Get your Things auth token:**
+   - Open Things → Settings (⌘,)
+   - Go to General tab
+   - Enable "Things URLs"
+   - Click "Manage" → Copy your token
+
+2. **Add token to Config.swift:**
+   ```swift
+   static let authToken = "YOUR_TOKEN_HERE"
+   ```
+
+3. **Grant AppleScript permissions:**
+   - System Settings → Privacy & Security → Automation
+   - Enable "Things3" for "Things Today Panel"
 
 **Permissions Required:**
-- Full Disk Access (System Settings → Privacy & Security → Full Disk Access)
-- Accessibility (for global hotkeys)
+- Automation access to Things3
+- Accessibility (for global hotkeys, optional)
 
 ### Customization
 
-Edit `ThingsDataService.swift` to customize:
+Edit `Config.swift` to customize:
 - Refresh interval (default: 60 seconds)
-- Task filters
-- Data source (SQLite vs MCP server)
+- Auth token
+- Data source preference (AppleScript, URL Scheme, or MCP Server)
 
 ## 📱 Usage
 
@@ -156,9 +170,9 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## 🐛 Known Issues
 
-- SQLite database path detection may vary across Things versions
-- Direct task completion requires Things URL scheme (opens Things)
-- First launch requires Full Disk Access permission
+- First launch requires Automation permission for Things3
+- Task completion uses Things URL scheme (briefly activates Things)
+- AppleScript parsing doesn't include deadline dates (Things limitation)
 
 ## 📄 License
 

@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import AppKit
 
 class ThingsDataService: ObservableObject {
     @Published var tasks: [ThingsTask] = []
@@ -7,13 +8,12 @@ class ThingsDataService: ObservableObject {
     @Published var errorMessage: String?
 
     private var cancellables = Set<AnyCancellable>()
-    private let mcpServerURL = "http://localhost:3000" // Adjust based on your MCP server setup
 
     init() {
         fetchTasks()
 
-        // Auto-refresh every 60 seconds
-        Timer.publish(every: 60, on: .main, in: .common)
+        // Auto-refresh based on configuration
+        Timer.publish(every: ThingsConfig.refreshInterval, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 self?.fetchTasks()
@@ -25,28 +25,16 @@ class ThingsDataService: ObservableObject {
         isLoading = true
         errorMessage = nil
 
-        // Call the Things MCP server endpoint
-        // This is a placeholder - actual implementation depends on your MCP server setup
-        fetchFromMCPServer()
+        // Use AppleScript to get today's tasks from Things
+        fetchFromThingsAppleScript()
     }
 
-    private func fetchFromMCPServer() {
-        // Option 1: Call MCP server via HTTP
-        // This requires your MCP server to expose an HTTP endpoint
-
-        // Option 2: Direct Things URL Scheme
-        // Use Things URL scheme to get data (limited)
-
-        // Option 3: Direct SQLite access (most reliable)
-        fetchFromSQLite()
-    }
-
-    private func fetchFromSQLite() {
+    private func fetchFromThingsAppleScript() {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
 
             do {
-                let tasks = try self.queryThingsDatabase()
+                let tasks = try self.queryThingsWithAppleScript()
 
                 DispatchQueue.main.async {
                     self.tasks = tasks
@@ -56,45 +44,138 @@ class ThingsDataService: ObservableObject {
                 DispatchQueue.main.async {
                     self.errorMessage = "Failed to load tasks: \(error.localizedDescription)"
                     self.isLoading = false
+
+                    // Fallback to mock data for testing
+                    self.tasks = SQLiteHelper.mockTasks()
                 }
             }
         }
     }
 
-    private func queryThingsDatabase() throws -> [ThingsTask] {
-        // Find Things database
-        let homeDir = FileManager.default.homeDirectoryForCurrentUser
-        let groupContainer = homeDir.appendingPathComponent("Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac")
+    private func queryThingsWithAppleScript() throws -> [ThingsTask] {
+        // AppleScript to get today's tasks from Things
+        let script = """
+        tell application "Things3"
+            set todayTodos to to dos of list "Today"
+            set taskList to {}
 
-        // Find the database file
-        guard let thingsDataDir = try? FileManager.default.contentsOfDirectory(
-            at: groupContainer,
-            includingPropertiesForKeys: nil
-        ).first(where: { $0.lastPathComponent.hasPrefix("ThingsData-") }) else {
-            throw NSError(domain: "ThingsDataService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Things database not found"])
+            repeat with aTodo in todayTodos
+                set todoData to {¬
+                    id:id of aTodo, ¬
+                    name:name of aTodo, ¬
+                    notes:notes of aTodo, ¬
+                    status:status of aTodo, ¬
+                    project:project of aTodo, ¬
+                    area:area of aTodo, ¬
+                    tags:tag names of aTodo ¬
+                }
+                set end of taskList to todoData
+            end repeat
+
+            return taskList
+        end tell
+        """
+
+        var error: NSDictionary?
+        if let scriptObject = NSAppleScript(source: script) {
+            let output = scriptObject.executeAndReturnError(&error)
+
+            if let error = error {
+                throw NSError(
+                    domain: "ThingsDataService",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "AppleScript error: \(error)"]
+                )
+            }
+
+            // Parse AppleScript output into ThingsTask objects
+            return try parseAppleScriptOutput(output)
+        } else {
+            throw NSError(
+                domain: "ThingsDataService",
+                code: 3,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to create AppleScript"]
+            )
         }
+    }
 
-        let dbPath = thingsDataDir
-            .appendingPathComponent("Things Database.thingsdatabase")
-            .appendingPathComponent("main.sqlite")
+    private func parseAppleScriptOutput(_ output: NSAppleEventDescriptor) throws -> [ThingsTask] {
+        var tasks: [ThingsTask] = []
 
-        // Query database using SQLite
-        let tasks = try SQLiteHelper.queryTodayTasks(at: dbPath)
+        // Parse the AppleScript list descriptor
+        for i in 1...output.numberOfItems {
+            guard let item = output.atIndex(i) else { continue }
+
+            // Extract properties from the record
+            let id = item.forKeyword(AEKeyword("id  ".fourCharCodeValue))?.stringValue ?? UUID().uuidString
+            let name = item.forKeyword(AEKeyword("name".fourCharCodeValue))?.stringValue ?? "Untitled"
+            let notes = item.forKeyword(AEKeyword("note".fourCharCodeValue))?.stringValue
+            let status = item.forKeyword(AEKeyword("stat".fourCharCodeValue))?.stringValue ?? "incomplete"
+            let project = item.forKeyword(AEKeyword("proj".fourCharCodeValue))?.stringValue
+            let area = item.forKeyword(AEKeyword("area".fourCharCodeValue))?.stringValue
+
+            // Parse tags
+            var tags: [String] = []
+            if let tagsList = item.forKeyword(AEKeyword("tags".fourCharCodeValue)) {
+                for j in 1...tagsList.numberOfItems {
+                    if let tag = tagsList.atIndex(j)?.stringValue {
+                        tags.append(tag)
+                    }
+                }
+            }
+
+            let taskStatus: ThingsTask.TaskStatus = status == "completed" ? .completed : .incomplete
+
+            let task = ThingsTask(
+                id: id,
+                title: name,
+                notes: notes,
+                status: taskStatus,
+                project: project,
+                area: area,
+                tags: tags,
+                deadline: nil, // AppleScript doesn't easily expose deadline
+                when: "today",
+                checklist: nil
+            )
+
+            tasks.append(task)
+        }
 
         return tasks
     }
 
     func toggleTask(_ task: ThingsTask) {
-        // Update task status in Things
-        // This requires calling Things URL scheme or updating database
-        openTaskInThings(task)
+        // Use Things URL scheme to complete/uncomplete task
+        let action = task.isCompleted ? "open" : "update"
+        let status = task.isCompleted ? "" : "&completed=true"
+
+        if let url = URL(string: "things:///\(action)?id=\(task.id)\(status)&auth-token=\(ThingsConfig.authToken)") {
+            NSWorkspace.shared.open(url)
+
+            // Refresh tasks after a brief delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.fetchTasks()
+            }
+        }
     }
 
     func openTaskInThings(_ task: ThingsTask) {
-        // Use Things URL scheme to open/complete task
-        if let url = URL(string: "things:///show?id=\(task.id)") {
+        // Use Things URL scheme to open task
+        if let url = URL(string: "things:///show?id=\(task.id)&auth-token=\(ThingsConfig.authToken)") {
             NSWorkspace.shared.open(url)
         }
+    }
+}
+
+// MARK: - String Extension for FourCharCode
+extension String {
+    var fourCharCodeValue: FourCharCode {
+        var result: FourCharCode = 0
+        for char in self.utf8 {
+            result = result << 8 + FourCharCode(char)
+        }
+        return result
     }
 }
 
