@@ -91,6 +91,7 @@ struct HeaderView: View {
     let onRefresh: () -> Void
 
     @State private var isRefreshing = false
+    @State private var showSettings = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -108,6 +109,20 @@ struct HeaderView: View {
             }
 
             Spacer()
+
+            // Settings button
+            Button(action: {
+                showSettings = true
+            }) {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(PlainButtonStyle())
+            .help("Settings")
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
+            }
 
             // Refresh button
             Button(action: {
