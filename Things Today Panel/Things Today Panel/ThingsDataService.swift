@@ -281,6 +281,7 @@ class SQLiteHelper {
     private static let status = Expression<Int64>("status")
     private static let start = Expression<Int64>("start")
     private static let todayIndex = Expression<Int64>("todayIndex")
+    private static let todayIndexReferenceDate = Expression<Int64?>("todayIndexReferenceDate")
     private static let deadline = Expression<Int64?>("deadline")
     private static let projectUuid = Expression<String?>("project")
     private static let areaUuid = Expression<String?>("area")
@@ -357,9 +358,9 @@ class SQLiteHelper {
 
         let db = try Connection(dbPath, readonly: true)
 
-        // Query today's tasks (status=0 incomplete, start=1 today, trashed=0)
+        // Query today's tasks (tasks with a todayIndexReferenceDate are in the Today list)
         let query = tasks
-            .filter(status == 0 && start == 1 && trashed == 0)
+            .filter(status == 0 && trashed == 0 && todayIndexReferenceDate > 0)
             .order(todayIndex)
 
         var result: [ThingsTask] = []
