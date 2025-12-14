@@ -24,6 +24,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Hide dock icon for a cleaner experience
         NSApp.setActivationPolicy(.accessory)
 
+        // Check and request Accessibility permissions for global hotkey
+        checkAccessibilityPermissions()
+
         // Create menu bar item with star icon
         setupMenuBar()
 
@@ -35,8 +38,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             showFloatingPanel()
         }
 
-        // Set up global hotkey (Command + Shift + T)
+        // Set up global hotkey (Command + Control + Shift + T)
         setupGlobalHotkey()
+    }
+
+    func checkAccessibilityPermissions() {
+        let options: NSDictionary = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+        let accessEnabled = AXIsProcessTrustedWithOptions(options)
+
+        if !accessEnabled {
+            print("⚠️ Accessibility permissions not granted - global hotkey will not work")
+
+            // Show alert to open System Settings manually
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                let alert = NSAlert()
+                alert.messageText = "Accessibility Permission Required"
+                alert.informativeText = "Things Today Panel needs Accessibility permissions to register the global hotkey (⌘⌃⇧T).\n\nClick 'Open System Settings' to grant permission, then restart the app."
+                alert.alertStyle = .informational
+                alert.addButton(withTitle: "Open System Settings")
+                alert.addButton(withTitle: "Skip")
+
+                let response = alert.runModal()
+                if response == .alertFirstButtonReturn {
+                    // Open System Settings to Accessibility pane
+                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                }
+            }
+        } else {
+            print("✅ Accessibility permissions granted")
+        }
     }
 
     func setupMenuBar() {
@@ -50,7 +80,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             button.image = starImage
             button.action = #selector(togglePanel)
             button.target = self
-            button.toolTip = "Things Today Panel (⌘⌥T)"
+            button.toolTip = "Things Today Panel (⌘⌃⇧T)"
         }
 
         // Create menu
@@ -117,22 +147,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func togglePanel() {
+        print("🔵 togglePanel called")
         if let panel = floatingPanel {
+            print("🔵 panel exists, isVisible: \(panel.isVisible)")
             if panel.isVisible {
+                print("🔵 hiding panel")
                 panel.orderOut(nil)
             } else {
+                print("🔵 showing panel")
                 showFloatingPanel()
             }
         } else {
+            print("🔵 panel doesn't exist, creating new one")
             showFloatingPanel()
         }
+        print("🔵 togglePanel completed")
     }
 
     func showFloatingPanel() {
+        print("🟢 showFloatingPanel called")
         if floatingPanel == nil {
+            print("🟢 Creating new FloatingPanelWindow")
             floatingPanel = FloatingPanelWindow()
         }
 
+        print("🟢 Making panel key and ordering front")
         floatingPanel?.makeKeyAndOrderFront(nil)
         floatingPanel?.center()
 
@@ -142,11 +181,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 floatingPanel?.setFrame(frame, display: true)
             }
         }
+        print("🟢 showFloatingPanel completed, panel isVisible: \(floatingPanel?.isVisible ?? false)")
     }
 
     func setupGlobalHotkey() {
-        // Register Command+Option+T hotkey using Carbon (works globally)
-        let modifiers: UInt32 = UInt32(cmdKey | optionKey)
+        // Register Command+Control+Shift+T hotkey using Carbon (works globally)
+        let modifiers: UInt32 = UInt32(cmdKey | controlKey | shiftKey)
         let keyCode: UInt32 = 17 // T key
 
         var gMyHotKeyID = EventHotKeyID()
@@ -161,11 +201,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         InstallEventHandler(
             GetApplicationEventTarget(),
             { (nextHandler, theEvent, userData) -> OSStatus in
+                print("🟢 Hotkey pressed!")
                 // Toggle panel when hotkey is pressed
-                if let appDelegate = userData?.assumingMemoryBound(to: AppDelegate.self).pointee {
-                    DispatchQueue.main.async {
-                        appDelegate.togglePanel()
-                    }
+                guard let userData = userData else {
+                    print("🔴 No userData")
+                    return noErr
+                }
+
+                let appDelegate = Unmanaged<AppDelegate>.fromOpaque(userData).takeUnretainedValue()
+                print("🟢 Got appDelegate, calling togglePanel")
+                DispatchQueue.main.async {
+                    appDelegate.togglePanel()
                 }
                 return noErr
             },
@@ -187,11 +233,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        // Don't quit when the panel is hidden
+        // Never quit when windows are closed - we're a menu bar app
+        print("🟡 applicationShouldTerminateAfterLastWindowClosed called - returning false")
         return false
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Only allow termination when explicitly quit from menu
+        // This prevents the app from quitting when windows close
+        print("🟡 applicationShouldTerminate called - allowing termination")
+
+        // Save window position before quitting
+        if let frame = floatingPanel?.frame {
+            UserDefaults.standard.set(NSStringFromRect(frame), forKey: "panelFrame")
+        }
+
+        return .terminateNow
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
+        print("🔴 applicationWillTerminate called - app is quitting!")
         // Save window position
         if let frame = floatingPanel?.frame {
             UserDefaults.standard.set(NSStringFromRect(frame), forKey: "panelFrame")

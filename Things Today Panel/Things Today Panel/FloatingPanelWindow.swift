@@ -13,6 +13,12 @@ class FloatingPanelWindow: NSPanel {
             defer: false
         )
 
+        // Prevent window from releasing when closed
+        self.isReleasedWhenClosed = false
+
+        // Set delegate to self to intercept close
+        self.delegate = self
+
         // Panel behavior - stays on top, non-activating
         self.level = .floating
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -68,7 +74,7 @@ class FloatingPanelWindow: NSPanel {
         }
     }
 
-    // Override to prevent window from closing app
+    // Override to prevent window from closing app - just hide instead
     override func close() {
         // Animate out
         NSAnimationContext.runAnimationGroup({ context in
@@ -76,12 +82,23 @@ class FloatingPanelWindow: NSPanel {
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             self.animator().alphaValue = 0
         }, completionHandler: {
-            super.close()
+            // Hide instead of closing to prevent app from quitting
+            self.orderOut(nil)
+            self.alphaValue = 1 // Reset alpha for next show
         })
     }
 
-    // Handle escape key to close
+    // Handle escape key to hide (not close)
     override func cancelOperation(_ sender: Any?) {
         close()
+    }
+}
+
+// MARK: - Window Delegate
+extension FloatingPanelWindow: NSWindowDelegate {
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        // Never actually close - just hide instead
+        close()
+        return false
     }
 }

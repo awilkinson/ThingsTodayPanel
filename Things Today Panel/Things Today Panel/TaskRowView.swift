@@ -87,12 +87,15 @@ struct TaskRowView: View {
 
     private var backgroundView: some View {
         RoundedRectangle(cornerRadius: 6)
-            .fill(isSelected ? Color.thingsBlue.opacity(0.12) : (isHovered ? Color.thingsHover : Color.clear))
+            .fill(isSelected ? Color.thingsBlue.opacity(0.08) : (isHovered ? Color.thingsHover : Color.clear))
+            .animation(.easeInOut(duration: 0.15), value: isSelected)
+            .animation(.easeInOut(duration: 0.15), value: isHovered)
     }
 
     private var selectionBorder: some View {
         RoundedRectangle(cornerRadius: 6)
-            .strokeBorder(Color.thingsBlue.opacity(isSelected ? 0.4 : 0), lineWidth: isSelected ? 2 : 0)
+            .stroke(Color.thingsBlue.opacity(isSelected ? 0.3 : 0), lineWidth: isSelected ? 1.5 : 0)
+            .animation(.easeInOut(duration: 0.15), value: isSelected)
     }
 
     private var pressGesture: some Gesture {
@@ -140,10 +143,24 @@ struct CheckboxView: View {
     let onToggle: () -> Void
 
     @State private var isHovered = false
+    @State private var isPressed = false
 
     var body: some View {
         Button(action: {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                isPressed = true
+            }
+
+            // Haptic feedback on macOS
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+
             onToggle()
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                    isPressed = false
+                }
+            }
         }) {
             ZStack {
                 Circle()
@@ -156,21 +173,23 @@ struct CheckboxView: View {
                             .fill(isCompleted ? Color.thingsBlue : Color.clear)
                     )
                     .frame(width: 20, height: 20)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isCompleted)
 
                 if isCompleted {
                     Image(systemName: "checkmark")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundColor(.white)
-                        .transition(.scale.combined(with: .opacity))
+                        .transition(.scale(scale: 0.5).combined(with: .opacity))
+                        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isCompleted)
                 }
             }
-            .scaleEffect(isHovered ? 1.1 : 1.0)
+            .scaleEffect(isPressed ? 0.9 : (isHovered ? 1.1 : 1.0))
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isPressed)
+            .animation(.easeInOut(duration: 0.15), value: isHovered)
         }
         .buttonStyle(PlainButtonStyle())
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovered = hovering
-            }
+            isHovered = hovering
         }
     }
 }
