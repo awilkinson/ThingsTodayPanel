@@ -53,19 +53,7 @@ struct ContentView: View {
     }
 
     var body: some View {
-        ZStack {
-            // Background with subtle gradient
-            LinearGradient(
-                gradient: Gradient(colors: [
-                    Color(nsColor: .controlBackgroundColor),
-                    Color(nsColor: .controlBackgroundColor).opacity(0.95)
-                ]),
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-
-            VStack(spacing: 0) {
+        VStack(spacing: 0) {
                 // Header
                 HeaderView(taskCount: incompleteTasks.count, onRefresh: {
                     withAnimation {
@@ -113,17 +101,13 @@ struct ContentView: View {
                             }
                         }
                         .padding(.vertical, 8)
+                        .padding(.bottom, 60)  // Add space for sticky footer
                     }
                 }
 
-                // Footer with quick add
-                Divider()
-                    .opacity(0.3)
-
-                FooterView()
+                // Sticky "New Task" button at bottom
+                StickyNewTaskButton(dataService: dataService)
             }
-        }
-        .frame(minWidth: 320, minHeight: 400)
     }
 }
 
@@ -136,28 +120,30 @@ struct HeaderView: View {
     @State private var showSettings = false
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             // Title
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text("Today")
-                    .font(.system(size: 24, weight: .bold, design: .default))
+                    .font(.system(size: 20, weight: .bold, design: .default))
                     .foregroundColor(.primary)
+                    .lineLimit(1)
 
                 if taskCount > 0 {
                     Text("\(taskCount) task\(taskCount == 1 ? "" : "s")")
-                        .font(.system(size: 13))
+                        .font(.system(size: 11))
                         .foregroundColor(.secondary)
+                        .lineLimit(1)
                 }
             }
 
-            Spacer()
+            Spacer(minLength: 0)
 
             // Settings button
             Button(action: {
                 showSettings = true
             }) {
                 Image(systemName: "gearshape")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.secondary)
             }
             .buttonStyle(PlainButtonStyle())
@@ -175,7 +161,7 @@ struct HeaderView: View {
                 }
             }) {
                 Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.secondary)
                     .rotationEffect(.degrees(isRefreshing ? 360 : 0))
                     .animation(.linear(duration: 0.5).repeatCount(isRefreshing ? 10 : 1, autoreverses: false), value: isRefreshing)
@@ -183,8 +169,8 @@ struct HeaderView: View {
             .buttonStyle(PlainButtonStyle())
             .help("Refresh tasks")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 16)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
     }
 }
 
@@ -193,6 +179,12 @@ struct TasksSection: View {
     let title: String
     let tasks: [ThingsTask]
     let dataService: ThingsDataService
+
+    @State private var deletedTaskIds: Set<String> = []
+
+    var visibleTasks: [ThingsTask] {
+        tasks.filter { !deletedTaskIds.contains($0.id) }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -204,7 +196,7 @@ struct TasksSection: View {
                 .padding(.top, 12)
                 .padding(.bottom, 4)
 
-            ForEach(tasks) { task in
+            ForEach(visibleTasks) { task in
                 TaskRowView(
                     task: task,
                     onToggle: { task in
@@ -212,12 +204,32 @@ struct TasksSection: View {
                     },
                     onTap: { task in
                         dataService.openTaskInThings(task)
+                    },
+                    onRename: { task, newTitle in
+                        dataService.renameTask(task, newTitle: newTitle)
+                    },
+                    onDelete: { task in
+                        // Optimistic deletion - remove from UI immediately
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            deletedTaskIds.insert(task.id)
+                        }
+                        dataService.deleteTask(task)
+
+                        // Clear deleted IDs after refresh completes
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                            deletedTaskIds.remove(task.id)
+                        }
                     }
                 )
                 .padding(.horizontal, 4)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .transition(.asymmetric(
+                    insertion: .opacity.combined(with: .move(edge: .top)),
+                    removal: .opacity.combined(with: .move(edge: .leading))
+                ))
             }
         }
+        .padding(.horizontal, 4)
+        .padding(.bottom, 8)
     }
 }
 
@@ -227,6 +239,11 @@ struct CompletedTasksSection: View {
     let dataService: ThingsDataService
 
     @State private var isExpanded = false
+    @State private var deletedTaskIds: Set<String> = []
+
+    var visibleTasks: [ThingsTask] {
+        tasks.filter { !deletedTaskIds.contains($0.id) }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -248,7 +265,7 @@ struct CompletedTasksSection: View {
 
                     Spacer()
 
-                    Text("\(tasks.count)")
+                    Text("\(visibleTasks.count)")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.secondary)
                 }
@@ -258,7 +275,7 @@ struct CompletedTasksSection: View {
             .buttonStyle(PlainButtonStyle())
 
             if isExpanded {
-                ForEach(tasks) { task in
+                ForEach(visibleTasks) { task in
                     TaskRowView(
                         task: task,
                         onToggle: { task in
@@ -266,10 +283,28 @@ struct CompletedTasksSection: View {
                         },
                         onTap: { task in
                             dataService.openTaskInThings(task)
+                        },
+                        onRename: { task, newTitle in
+                            dataService.renameTask(task, newTitle: newTitle)
+                        },
+                        onDelete: { task in
+                            // Optimistic deletion - remove from UI immediately
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                deletedTaskIds.insert(task.id)
+                            }
+                            dataService.deleteTask(task)
+
+                            // Clear deleted IDs after refresh completes
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                                deletedTaskIds.remove(task.id)
+                            }
                         }
                     )
                     .padding(.horizontal, 4)
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .scale(scale: 0.95)),
+                        removal: .opacity.combined(with: .move(edge: .leading))
+                    ))
                 }
             }
         }
@@ -318,38 +353,45 @@ struct LoadingView: View {
 
 // MARK: - Footer View
 struct FooterView: View {
-    @State private var isHovered = false
+    @EnvironmentObject var dataService: ThingsDataService
+    @State private var newTaskTitle = ""
+    @FocusState private var isFocused: Bool
 
     var body: some View {
-        Button(action: {
-            // Open Things to add new task
-            if let url = URL(string: "things:///add") {
-                NSWorkspace.shared.open(url)
+        HStack(spacing: 8) {
+            Image(systemName: "plus.circle.fill")
+                .font(.system(size: 14))
+                .foregroundColor(isFocused ? .thingsBlue : .secondary)
+
+            TextField("New To-Do", text: $newTaskTitle, onCommit: {
+                addTask()
+            })
+            .focused($isFocused)
+            .font(.system(size: 13, weight: .medium))
+            .textFieldStyle(PlainTextFieldStyle())
+            .frame(maxWidth: .infinity)
+
+            if !newTaskTitle.isEmpty {
+                Button(action: {
+                    addTask()
+                }) {
+                    Image(systemName: "arrow.right.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(.thingsBlue)
+                }
+                .buttonStyle(PlainButtonStyle())
             }
-        }) {
-            HStack(spacing: 8) {
-                Image(systemName: "plus.circle.fill")
-                    .font(.system(size: 14))
-
-                Text("New To-Do")
-                    .font(.system(size: 13, weight: .medium))
-
-                Spacer()
-
-                Text("⌘N")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.secondary.opacity(0.6))
-            }
-            .foregroundColor(isHovered ? .thingsBlue : .secondary)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(isHovered ? Color.thingsHover : Color.clear)
         }
-        .buttonStyle(PlainButtonStyle())
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovered = hovering
-            }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(isFocused ? Color.thingsHover.opacity(0.5) : Color.clear)
+    }
+
+    private func addTask() {
+        let trimmed = newTaskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            dataService.addTask(title: trimmed)
+            newTaskTitle = ""
         }
     }
 }
@@ -407,6 +449,174 @@ struct ErrorBannerView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(Color.orange.opacity(0.1))
+    }
+}
+
+// MARK: - Sticky New Task Button
+struct StickyNewTaskButton: View {
+    let dataService: ThingsDataService
+
+    @State private var isExpanded = false
+    @State private var newTaskTitle = ""
+    @State private var selectedProject = "💻 Computer"
+    @State private var isSubmitting = false
+    @State private var pendingTaskTitle: String?
+    @FocusState private var isFocused: Bool
+
+    let availableProjects = ["💻 Computer", "⏳ Deep Work"]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Divider()
+                .opacity(0.3)
+
+            if isExpanded {
+                // Expanded state with text field and project picker
+                VStack(spacing: 8) {
+                    // Text field
+                    HStack(spacing: 12) {
+                        Circle()
+                            .strokeBorder(Color.secondary.opacity(0.3), lineWidth: 2)
+                            .frame(width: 20, height: 20)
+
+                        TextField("New task", text: $newTaskTitle, onCommit: {
+                            addTask()
+                        })
+                        .focused($isFocused)
+                        .font(.system(size: 14, weight: .medium))
+                        .textFieldStyle(PlainTextFieldStyle())
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                isFocused = true
+                            }
+                        }
+                        .onChange(of: isFocused) { focused in
+                            // If focus is lost and field is empty, collapse
+                            if !focused && newTaskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    isExpanded = false
+                                }
+                            }
+                        }
+                        .onExitCommand {
+                            cancelAdd()
+                        }
+                    }
+
+                    // Project picker
+                    HStack(spacing: 8) {
+                        Text("Add to:")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+
+                        Menu {
+                            ForEach(availableProjects, id: \.self) { project in
+                                Button(action: {
+                                    selectedProject = project
+                                }) {
+                                    HStack {
+                                        Text(project)
+                                        if selectedProject == project {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(selectedProject)
+                                    .font(.system(size: 11, weight: .medium))
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 9))
+                            }
+                            .foregroundColor(.thingsBlue)
+                        }
+                        .menuStyle(BorderlessButtonMenuStyle())
+
+                        Spacer()
+
+                        // Submit button
+                        if !newTaskTitle.isEmpty {
+                            Button(action: {
+                                addTask()
+                            }) {
+                                Image(systemName: "arrow.right.circle.fill")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(.thingsBlue)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .transition(.asymmetric(
+                    insertion: .opacity.combined(with: .move(edge: .bottom)),
+                    removal: .opacity
+                ))
+            } else {
+                // Collapsed state - just a button
+                Button(action: {
+                    NSApp.activate(ignoringOtherApps: true)
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        isExpanded = true
+                    }
+                }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(.thingsBlue)
+
+                        Text("New Task")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.primary)
+
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .transition(.opacity)
+            }
+        }
+        .background(.ultraThinMaterial)
+    }
+
+    private func addTask() {
+        guard !isSubmitting else { return }
+
+        let trimmed = newTaskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        isSubmitting = true
+
+        // Show pending task immediately
+        pendingTaskTitle = trimmed
+
+        // Add task to the selected project
+        dataService.addTask(title: trimmed, when: "today", list: selectedProject)
+
+        // Clear and collapse
+        newTaskTitle = ""
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            isExpanded = false
+        }
+
+        // Clear pending task after refresh completes
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) {
+            pendingTaskTitle = nil
+            isSubmitting = false
+        }
+    }
+
+    private func cancelAdd() {
+        newTaskTitle = ""
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            isExpanded = false
+        }
+        pendingTaskTitle = nil
+        isSubmitting = false
     }
 }
 

@@ -37,7 +37,7 @@ class ThingsDataService: ObservableObject {
             DispatchQueue.main.async {
                 self.errorMessage = "This data source is not yet implemented"
                 self.isLoading = false
-                self.tasks = SQLiteHelper.mockTasks()
+                self.tasks = []
             }
         }
     }
@@ -57,9 +57,7 @@ class ThingsDataService: ObservableObject {
                 DispatchQueue.main.async {
                     self.errorMessage = "Failed to load tasks: \(error.localizedDescription)"
                     self.isLoading = false
-
-                    // Fallback to mock data for testing
-                    self.tasks = SQLiteHelper.mockTasks()
+                    self.tasks = [] // Show empty list instead of mock data
                 }
             }
         }
@@ -81,9 +79,7 @@ class ThingsDataService: ObservableObject {
                 DispatchQueue.main.async {
                     self.errorMessage = "Failed to load tasks: \(error.localizedDescription)"
                     self.isLoading = false
-
-                    // Fallback to mock data for testing
-                    self.tasks = SQLiteHelper.mockTasks()
+                    self.tasks = [] // Show empty list instead of mock data
                 }
             }
         }
@@ -226,10 +222,30 @@ class ThingsDataService: ObservableObject {
 
     func toggleTask(_ task: ThingsTask) {
         // Use Things URL scheme to complete/uncomplete task
-        let action = task.isCompleted ? "open" : "update"
-        let status = task.isCompleted ? "" : "&completed=true"
+        let urlString: String
+        if task.isCompleted {
+            // Uncomplete the task
+            urlString = "things:///update?id=\(task.id)&completed=false&auth-token=\(ThingsConfig.authToken)"
+        } else {
+            // Complete the task
+            urlString = "things:///update?id=\(task.id)&completed=true&auth-token=\(ThingsConfig.authToken)"
+        }
 
-        if let url = URL(string: "things:///\(action)?id=\(task.id)\(status)&auth-token=\(ThingsConfig.authToken)") {
+        if let url = URL(string: urlString) {
+            NSWorkspace.shared.open(url)
+
+            // Refresh tasks after a brief delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.fetchTasks()
+            }
+        }
+    }
+
+    func deleteTask(_ task: ThingsTask) {
+        // Use Things URL scheme to delete (move to trash) task
+        let urlString = "things:///update?id=\(task.id)&canceled=true&auth-token=\(ThingsConfig.authToken)"
+
+        if let url = URL(string: urlString) {
             NSWorkspace.shared.open(url)
 
             // Refresh tasks after a brief delay
@@ -243,6 +259,50 @@ class ThingsDataService: ObservableObject {
         // Use Things URL scheme to open task
         if let url = URL(string: "things:///show?id=\(task.id)&auth-token=\(ThingsConfig.authToken)") {
             NSWorkspace.shared.open(url)
+        }
+    }
+
+    func renameTask(_ task: ThingsTask, newTitle: String) {
+        // Use Things URL scheme to update task title
+        let encodedTitle = newTitle.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? newTitle
+        if let url = URL(string: "things:///update?id=\(task.id)&title=\(encodedTitle)&auth-token=\(ThingsConfig.authToken)") {
+            NSWorkspace.shared.open(url)
+
+            // Refresh tasks after a brief delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.fetchTasks()
+            }
+        }
+    }
+
+    func addTask(title: String, when: String = "today", list: String? = nil) {
+        // Use Things URL scheme to create new task
+        let encodedTitle = title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? title
+
+        var urlString = "things:///add?title=\(encodedTitle)&when=\(when)"
+
+        // Add project/area if specified
+        if let list = list, !list.isEmpty {
+            let encodedList = list.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? list
+            urlString += "&list=\(encodedList)"
+        }
+
+        urlString += "&auth-token=\(ThingsConfig.authToken)"
+
+        if let url = URL(string: urlString) {
+            NSWorkspace.shared.open(url)
+
+            // Refresh tasks after a delay to allow Things to write to database
+            // Multiple refreshes to catch the task as soon as it appears
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.fetchTasks()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                self?.fetchTasks()
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+                self?.fetchTasks()
+            }
         }
     }
 }
@@ -308,22 +368,30 @@ class SQLiteHelper {
 
     // MARK: - Database Path Discovery
     static func thingsDatabasePath() -> String? {
-        let groupContainer = FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: "JLMPQHK86H.com.culturedcode.ThingsMac")
+        // Direct hardcoded path to Things database
+        // We know the exact path exists from testing
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        let dbPath = "\(homeDir)/Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac/ThingsData-RIMFH/Things Database.thingsdatabase/main.sqlite"
 
-        guard let containerPath = groupContainer?.path else { return nil }
+        // Verify the file exists
+        if FileManager.default.fileExists(atPath: dbPath) {
+            return dbPath
+        }
 
+        // Fallback: try to find it dynamically
+        let basePath = "\(homeDir)/Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac"
         let fileManager = FileManager.default
-        guard let contents = try? fileManager.contentsOfDirectory(atPath: containerPath) else {
+
+        guard let contents = try? fileManager.contentsOfDirectory(atPath: basePath) else {
             return nil
         }
 
         // Find directory starting with "ThingsData-"
         for item in contents {
             if item.hasPrefix("ThingsData-") {
-                let dbPath = "\(containerPath)/\(item)/Things Database.thingsdatabase/main.sqlite"
-                if fileManager.fileExists(atPath: dbPath) {
-                    return dbPath
+                let foundPath = "\(basePath)/\(item)/Things Database.thingsdatabase/main.sqlite"
+                if fileManager.fileExists(atPath: foundPath) {
+                    return foundPath
                 }
             }
         }
@@ -359,6 +427,7 @@ class SQLiteHelper {
         let db = try Connection(dbPath, readonly: true)
 
         // Query today's tasks (tasks with a todayIndexReferenceDate are in the Today list)
+        // Sort by todayIndex ascending (natural Things order - new tasks appear at bottom)
         let query = tasks
             .filter(status == 0 && trashed == 0 && todayIndexReferenceDate > 0)
             .order(todayIndex)

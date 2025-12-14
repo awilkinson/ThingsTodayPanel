@@ -18,6 +18,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var onboardingWindow: NSWindow?
     var statusItem: NSStatusItem?
     var hotkeyEventHandler: EventHandlerRef?
+    var hotKeyRef: EventHotKeyRef?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Hide dock icon for a cleaner experience
@@ -49,7 +50,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             button.image = starImage
             button.action = #selector(togglePanel)
             button.target = self
-            button.toolTip = "Things Today Panel (⌘⇧T)"
+            button.toolTip = "Things Today Panel (⌘⌥T)"
         }
 
         // Create menu
@@ -144,9 +145,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func setupGlobalHotkey() {
-        // Register Command+Shift+T hotkey using Carbon
-        var hotKeyRef: EventHotKeyRef?
-        let modifiers: UInt32 = UInt32(cmdKey | shiftKey)
+        // Register Command+Option+T hotkey using Carbon (works globally)
+        let modifiers: UInt32 = UInt32(cmdKey | optionKey)
         let keyCode: UInt32 = 17 // T key
 
         var gMyHotKeyID = EventHotKeyID()
@@ -175,7 +175,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             &hotkeyEventHandler
         )
 
-        // Register hotkey
+        // Register hotkey (stored as instance variable to prevent deallocation)
         RegisterEventHotKey(
             keyCode,
             modifiers,
@@ -184,6 +184,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             0,
             &hotKeyRef
         )
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        // Don't quit when the panel is hidden
+        return false
     }
 
     func applicationWillTerminate(_ notification: Notification) {

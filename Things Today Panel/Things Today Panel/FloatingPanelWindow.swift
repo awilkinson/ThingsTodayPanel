@@ -34,12 +34,30 @@ class FloatingPanelWindow: NSPanel {
         self.standardWindowButton(.zoomButton)?.isHidden = true
 
         // Set minimum and maximum sizes
-        self.minSize = NSSize(width: 320, height: 400)
-        self.maxSize = NSSize(width: 480, height: 800)
+        self.minSize = NSSize(width: 200, height: 250)
+        self.maxSize = NSSize(width: 600, height: 900)
+
+        // Create visual effect view for translucency
+        let visualEffectView = NSVisualEffectView()
+        visualEffectView.material = .hudWindow
+        visualEffectView.blendingMode = .behindWindow
+        visualEffectView.state = .active
+        visualEffectView.wantsLayer = true
+        visualEffectView.layer?.cornerRadius = 12
+        visualEffectView.layer?.masksToBounds = true
 
         // Create and set the SwiftUI content view
         let contentView = ContentView()
-        self.contentView = NSHostingView(rootView: contentView)
+        let hostingView = NSHostingView(rootView: contentView)
+        hostingView.wantsLayer = true
+        hostingView.layer?.backgroundColor = .clear
+
+        // Add hosting view to visual effect view
+        visualEffectView.addSubview(hostingView)
+        hostingView.frame = visualEffectView.bounds
+        hostingView.autoresizingMask = [.width, .height]
+
+        self.contentView = visualEffectView
 
         // Animate in with a subtle spring
         self.alphaValue = 0
