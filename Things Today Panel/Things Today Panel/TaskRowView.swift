@@ -1,55 +1,77 @@
 import SwiftUI
+import Combine
 
 struct TaskRowView: View {
     let task: ThingsTask
+    @ObservedObject var navigationController: NavigationController
     let onToggle: (ThingsTask) -> Void
     let onTap: (ThingsTask) -> Void
     let onRename: (ThingsTask, String) -> Void
     let onDelete: (ThingsTask) -> Void
 
     @State private var isHovered = false
-    @State private var isPressed = false
     @State private var isEditing = false
     @State private var editedTitle = ""
-    @State private var isSelected = false
     @FocusState private var isFocused: Bool
     @FocusState private var isTaskFocused: Bool
 
+    // Computed property to check if this task is selected by keyboard navigation
+    private var isSelected: Bool {
+        navigationController.selectedTaskId == task.id || isTaskFocused
+    }
+
     var body: some View {
         taskContent
-            .padding(.vertical, 10)
-            .padding(.horizontal, 12)
+            .padding(.vertical, .spacingSM)    // 8pt - better density
+            .padding(.horizontal, .spacingMD)   // 12pt - maintains comfort
             .background(backgroundView)
-            .overlay(selectionBorder)
-            .scaleEffect(isPressed ? 0.98 : 1.0)
+            .overlay(alignment: .leading) {
+                // Subtle left accent bar when selected
+                if isSelected {
+                    Rectangle()
+                        .fill(Color.thingsBlue)
+                        .frame(width: 3)
+                        .cornerRadius(1.5)
+                        .transition(.opacity)
+                }
+            }
             .focusable()
             .focused($isTaskFocused)
+            .focusEffectDisabled() // Disable the harsh blue system focus ring
             .onHover { hovering in
                 withAnimation(.easeInOut(duration: 0.15)) {
                     isHovered = hovering
                 }
             }
-            .simultaneousGesture(pressGesture)
-            .onTapGesture(perform: selectTask)
             .onChange(of: isTaskFocused, perform: updateSelection)
             .onKeyPress(.delete, action: handleDelete)
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ClearFocus"))) { _ in
+                isTaskFocused = false
+            }
     }
 
     private var taskContent: some View {
-        HStack(alignment: .top, spacing: 12) {
-            // Checkbox
+        HStack(alignment: .center, spacing: .spacingMD) {
+            // Checkbox - has its own button action
             CheckboxView(isCompleted: task.isCompleted) {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                     onToggle(task)
                 }
             }
+            .allowsHitTesting(true) // Ensure checkbox can receive clicks
+            .zIndex(1) // Keep checkbox above other gesture layers
 
             // Task content - title (editable on double-click)
-            if isEditing {
-                editingField
-            } else {
-                taskTitle
+            // Apply tap gesture only to the text, not the checkbox
+            Group {
+                if isEditing {
+                    editingField
+                } else {
+                    taskTitle
+                }
             }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: selectTask)
         }
     }
 
@@ -88,29 +110,19 @@ struct TaskRowView: View {
     private var backgroundView: some View {
         RoundedRectangle(cornerRadius: 6)
             .fill(isSelected ? Color.thingsBlue.opacity(0.08) : (isHovered ? Color.thingsHover : Color.clear))
-            .animation(.easeInOut(duration: 0.15), value: isSelected)
+            .animation(.easeInOut(duration: 0.2), value: isSelected)
             .animation(.easeInOut(duration: 0.15), value: isHovered)
-    }
-
-    private var selectionBorder: some View {
-        RoundedRectangle(cornerRadius: 6)
-            .stroke(Color.thingsBlue.opacity(isSelected ? 0.3 : 0), lineWidth: isSelected ? 1.5 : 0)
-            .animation(.easeInOut(duration: 0.15), value: isSelected)
-    }
-
-    private var pressGesture: some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { _ in isPressed = true }
-            .onEnded { _ in isPressed = false }
     }
 
     private func selectTask() {
         isTaskFocused = true
-        isSelected = true
+        navigationController.selectedTaskId = task.id
     }
 
     private func updateSelection(focused: Bool) {
-        isSelected = focused
+        if focused {
+            navigationController.selectedTaskId = task.id
+        }
     }
 
     private func handleDelete() -> KeyPress.Result {
@@ -147,6 +159,7 @@ struct CheckboxView: View {
 
     var body: some View {
         Button(action: {
+            print("🔵 CheckboxView button clicked!")
             withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
                 isPressed = true
             }
@@ -154,6 +167,7 @@ struct CheckboxView: View {
             // Haptic feedback on macOS
             NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
 
+            print("🔵 Calling onToggle()")
             onToggle()
 
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -188,6 +202,8 @@ struct CheckboxView: View {
             .animation(.easeInOut(duration: 0.15), value: isHovered)
         }
         .buttonStyle(PlainButtonStyle())
+        .frame(width: 44, height: 44) // Larger button frame
+        .contentShape(Rectangle()) // Make entire button area clickable
         .onHover { hovering in
             isHovered = hovering
         }

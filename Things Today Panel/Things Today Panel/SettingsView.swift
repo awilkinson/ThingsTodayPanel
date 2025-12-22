@@ -4,6 +4,8 @@ struct SettingsView: View {
     @Environment(\.dismiss) var dismiss
     @State private var authToken: String = UserDefaults.standard.thingsAuthToken ?? ""
     @State private var refreshInterval: Double = UserDefaults.standard.refreshInterval
+    @State private var hotkeyKeyCode: UInt32 = UserDefaults.standard.hotkeyKeyCode
+    @State private var hotkeyModifiers: UInt32 = UserDefaults.standard.hotkeyModifiers
     @State private var showSaved: Bool = false
 
     var body: some View {
@@ -55,6 +57,20 @@ struct SettingsView: View {
                                 .controlSize(.small)
 
                             Text("Tasks will automatically refresh every \(Int(refreshInterval)) seconds")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
+                    // Global Hotkey Section
+                    SettingsSection(title: "Global Hotkey") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Keyboard Shortcut")
+                                .font(.system(size: 13, weight: .medium))
+
+                            HotkeyRecorderView(keyCode: $hotkeyKeyCode, modifiers: $hotkeyModifiers)
+
+                            Text("Click to record a new keyboard shortcut to toggle the panel")
                                 .font(.system(size: 11))
                                 .foregroundColor(.secondary)
                         }
@@ -119,6 +135,11 @@ struct SettingsView: View {
         // Save to UserDefaults
         UserDefaults.standard.thingsAuthToken = authToken.trimmingCharacters(in: .whitespacesAndNewlines)
         UserDefaults.standard.refreshInterval = refreshInterval
+        UserDefaults.standard.hotkeyKeyCode = hotkeyKeyCode
+        UserDefaults.standard.hotkeyModifiers = hotkeyModifiers
+
+        // Notify app to re-register hotkey
+        NotificationCenter.default.post(name: NSNotification.Name("HotkeyChanged"), object: nil)
 
         // Show saved indicator
         withAnimation {

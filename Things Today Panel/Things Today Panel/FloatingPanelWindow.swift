@@ -76,6 +76,9 @@ class FloatingPanelWindow: NSPanel {
 
     // Override to prevent window from closing app - just hide instead
     override func close() {
+        // Clear any focused controls before hiding
+        self.makeFirstResponder(nil)
+
         // Animate out
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.2
@@ -100,5 +103,20 @@ extension FloatingPanelWindow: NSWindowDelegate {
         // Never actually close - just hide instead
         close()
         return false
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        // Save position immediately when user moves the window
+        // This ensures the window always reappears exactly where the user left it
+        if let window = notification.object as? NSWindow {
+            UserDefaults.standard.set(NSStringFromRect(window.frame), forKey: "panelFrame")
+        }
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        // Save size immediately when user resizes the window
+        if let window = notification.object as? NSWindow {
+            UserDefaults.standard.set(NSStringFromRect(window.frame), forKey: "panelFrame")
+        }
     }
 }

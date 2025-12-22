@@ -10,6 +10,9 @@ class ThingsDataService: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
 
+    // Undo manager for supporting Command+Z
+    let undoManager = UndoManager()
+
     init() {
         fetchTasks()
 
@@ -221,23 +224,72 @@ class ThingsDataService: ObservableObject {
     }
 
     func toggleTask(_ task: ThingsTask) {
+        // Capture current state for undo
+        let taskId = task.id
+        let wasCompleted = task.isCompleted
+        let taskTitle = task.title
+        let taskStatus = task.status
+
+        // Register undo action BEFORE performing toggle
+        undoManager.registerUndo(withTarget: self) { service in
+            // Create a mock task with the previous state to toggle back
+            let undoTask = ThingsTask(
+                id: taskId,
+                title: taskTitle,
+                notes: nil,
+                status: taskStatus,
+                project: nil,
+                area: nil,
+                tags: [],
+                deadline: nil,
+                when: "today",
+                checklist: nil
+            )
+            service.performToggle(undoTask)
+        }
+        undoManager.setActionName(wasCompleted ? "Uncomplete Task" : "Complete Task")
+
+        // Perform the actual toggle
+        performToggle(task)
+    }
+
+    private func performToggle(_ task: ThingsTask) {
+        print("🟢 performToggle called for: \(task.title), isCompleted: \(task.isCompleted)")
         // Use Things URL scheme to complete/uncomplete task
         let urlString: String
         if task.isCompleted {
             // Uncomplete the task
             urlString = "things:///update?id=\(task.id)&completed=false&auth-token=\(ThingsConfig.authToken)"
+            print("🟢 Uncompleting task with URL: \(urlString)")
         } else {
             // Complete the task
             urlString = "things:///update?id=\(task.id)&completed=true&auth-token=\(ThingsConfig.authToken)"
+            print("🟢 Completing task with URL: \(urlString)")
         }
 
         if let url = URL(string: urlString) {
             NSWorkspace.shared.open(url)
+            print("🟢 Opened Things URL")
+
+            // Immediately hide Things and keep our panel focused
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                // Find Things app and hide it
+                if let thingsApp = NSRunningApplication.runningApplications(withBundleIdentifier: "com.culturedcode.ThingsMac").first {
+                    thingsApp.hide()
+                    print("🟢 Hid Things app")
+                }
+
+                // Re-activate our app to keep panel visible
+                NSApp.activate(ignoringOtherApps: true)
+            }
 
             // Refresh tasks after a brief delay
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                print("🟢 Refreshing tasks...")
                 self?.fetchTasks()
             }
+        } else {
+            print("🔴 Failed to create URL from: \(urlString)")
         }
     }
 
@@ -247,6 +299,14 @@ class ThingsDataService: ObservableObject {
 
         if let url = URL(string: urlString) {
             NSWorkspace.shared.open(url)
+
+            // Immediately hide Things and keep our panel focused
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                if let thingsApp = NSRunningApplication.runningApplications(withBundleIdentifier: "com.culturedcode.ThingsMac").first {
+                    thingsApp.hide()
+                }
+                NSApp.activate(ignoringOtherApps: true)
+            }
 
             // Refresh tasks after a brief delay
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -267,6 +327,14 @@ class ThingsDataService: ObservableObject {
         let encodedTitle = newTitle.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? newTitle
         if let url = URL(string: "things:///update?id=\(task.id)&title=\(encodedTitle)&auth-token=\(ThingsConfig.authToken)") {
             NSWorkspace.shared.open(url)
+
+            // Immediately hide Things and keep our panel focused
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                if let thingsApp = NSRunningApplication.runningApplications(withBundleIdentifier: "com.culturedcode.ThingsMac").first {
+                    thingsApp.hide()
+                }
+                NSApp.activate(ignoringOtherApps: true)
+            }
 
             // Refresh tasks after a brief delay
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -291,6 +359,14 @@ class ThingsDataService: ObservableObject {
 
         if let url = URL(string: urlString) {
             NSWorkspace.shared.open(url)
+
+            // Immediately hide Things and keep our panel focused
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                if let thingsApp = NSRunningApplication.runningApplications(withBundleIdentifier: "com.culturedcode.ThingsMac").first {
+                    thingsApp.hide()
+                }
+                NSApp.activate(ignoringOtherApps: true)
+            }
 
             // Refresh tasks after a delay to allow Things to write to database
             // Multiple refreshes to catch the task as soon as it appears

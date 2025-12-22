@@ -66,3 +66,24 @@ extension Color {
     // Subtle hover state
     static let thingsHover = Color.primary.opacity(0.03)
 }
+
+// MARK: - Spacing Design System
+extension CGFloat {
+    /// Extra small spacing (4pt) - Minimal breathing room between adjacent elements
+    static let spacingXS: CGFloat = 4
+
+    /// Small spacing (8pt) - Compact spacing for related groups
+    static let spacingSM: CGFloat = 8
+
+    /// Medium spacing (12pt) - Standard content spacing
+    static let spacingMD: CGFloat = 12
+
+    /// Large spacing (16pt) - Generous container padding
+    static let spacingLG: CGFloat = 16
+
+    /// Extra large spacing (24pt) - Major section separation
+    static let spacingXL: CGFloat = 24
+
+    /// 2X large spacing (40pt) - Bottom safe area
+    static let spacing2XL: CGFloat = 40
+}

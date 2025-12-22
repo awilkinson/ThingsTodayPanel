@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @StateObject private var dataService = ThingsDataService()
+    @StateObject private var navigation = NavigationController()
     @State private var searchText = ""
 
     var filteredTasks: [ThingsTask] {
@@ -60,6 +61,11 @@ struct ContentView: View {
                         dataService.fetchTasks()
                     }
                 })
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    // Clear focus when clicking header
+                    NotificationCenter.default.post(name: NSNotification.Name("ClearFocus"), object: nil)
+                }
 
                 Divider()
                     .opacity(0.3)
@@ -78,7 +84,7 @@ struct ContentView: View {
                     EmptyStateView(hasSearch: !searchText.isEmpty)
                 } else {
                     ScrollView {
-                        LazyVStack(spacing: 0) {
+                        LazyVStack(spacing: .spacingXS) {  // 4pt between rows
                             // Tasks grouped by project
                             if !incompleteTasks.isEmpty {
                                 ForEach(sortedProjectNames, id: \.self) { projectName in
@@ -86,7 +92,8 @@ struct ContentView: View {
                                         TasksSection(
                                             title: projectName,
                                             tasks: tasks,
-                                            dataService: dataService
+                                            dataService: dataService,
+                                            navigationController: navigation
                                         )
                                     }
                                 }
@@ -96,17 +103,105 @@ struct ContentView: View {
                             if !completedTasks.isEmpty {
                                 CompletedTasksSection(
                                     tasks: completedTasks,
-                                    dataService: dataService
+                                    dataService: dataService,
+                                    navigationController: navigation
                                 )
                             }
+
+                            // Spacer to fill remaining space and capture taps
+                            Color.clear
+                                .frame(minHeight: 100)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    // Clear focus when clicking empty space
+                                    NotificationCenter.default.post(name: NSNotification.Name("ClearFocus"), object: nil)
+                                }
                         }
-                        .padding(.vertical, 8)
-                        .padding(.bottom, 60)  // Add space for sticky footer
+                        .padding(.top, .spacingSM)          // 8pt - breathing room from header
+                        .padding(.bottom, .spacing2XL)      // 40pt - sufficient for sticky footer
                     }
                 }
 
                 // Sticky "New Task" button at bottom
                 StickyNewTaskButton(dataService: dataService)
+            }
+            .onChange(of: incompleteTasks) { tasks in
+                // Update navigation task IDs when tasks change
+                navigation.allTaskIds = tasks.map { $0.id }
+            }
+            .onKeyPress(.downArrow) {
+                navigation.selectNext()
+                return .handled
+            }
+            .onKeyPress(.upArrow) {
+                navigation.selectPrevious()
+                return .handled
+            }
+            .onKeyPress(.init("j")) {
+                navigation.selectNext()
+                return .handled
+            }
+            .onKeyPress(.init("k")) {
+                navigation.selectPrevious()
+                return .handled
+            }
+            .onKeyPress(.space) {
+                // Toggle completion on selected task
+                if let selectedId = navigation.selectedTaskId,
+                   let task = incompleteTasks.first(where: { $0.id == selectedId }) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        dataService.toggleTask(task)
+                    }
+                    return .handled
+                }
+                return .ignored
+            }
+            .onKeyPress(.return) {
+                // Open selected task in Things
+                if let selectedId = navigation.selectedTaskId,
+                   let task = incompleteTasks.first(where: { $0.id == selectedId }) {
+                    dataService.openTaskInThings(task)
+                    return .handled
+                }
+                return .ignored
+            }
+            .onKeyPress(.delete) {
+                // Delete selected task
+                if let selectedId = navigation.selectedTaskId,
+                   let task = incompleteTasks.first(where: { $0.id == selectedId }) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        dataService.deleteTask(task)
+                    }
+                    return .handled
+                }
+                return .ignored
+            }
+            .onKeyPress(.init("e")) {
+                // Start editing selected task (we'll need to add editing support)
+                // For now, just handle the key press
+                return .ignored
+            }
+            .onKeyPress(phases: .down) { press in
+                // Handle Command+Z (undo) or Command+Shift+Z (redo)
+                if press.key == .init("z") && press.modifiers.contains(.command) {
+                    if press.modifiers.contains(.shift) {
+                        // Command+Shift+Z - Redo
+                        if dataService.undoManager.canRedo {
+                            dataService.undoManager.redo()
+                            return .handled
+                        }
+                    } else {
+                        // Command+Z - Undo
+                        if dataService.undoManager.canUndo {
+                            dataService.undoManager.undo()
+                            return .handled
+                        }
+                    }
+                }
+                return .ignored
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ClearFocus"))) { _ in
+                navigation.clearSelection()
             }
     }
 }
@@ -169,8 +264,8 @@ struct HeaderView: View {
             .buttonStyle(PlainButtonStyle())
             .help("Refresh tasks")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, .spacingMD)   // 12pt
+        .padding(.vertical, .spacingSM)     // 8pt
     }
 }
 
@@ -179,6 +274,7 @@ struct TasksSection: View {
     let title: String
     let tasks: [ThingsTask]
     let dataService: ThingsDataService
+    @ObservedObject var navigationController: NavigationController
 
     @State private var deletedTaskIds: Set<String> = []
 
@@ -192,13 +288,14 @@ struct TasksSection: View {
             Text(title)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(.primary)
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 4)
+                .padding(.horizontal, .spacingLG)   // 16pt
+                .padding(.top, .spacingMD)          // 12pt
+                .padding(.bottom, .spacingSM)       // 8pt - better breathing room
 
             ForEach(visibleTasks) { task in
                 TaskRowView(
                     task: task,
+                    navigationController: navigationController,
                     onToggle: { task in
                         dataService.toggleTask(task)
                     },
@@ -221,15 +318,13 @@ struct TasksSection: View {
                         }
                     }
                 )
-                .padding(.horizontal, 4)
                 .transition(.asymmetric(
                     insertion: .opacity.combined(with: .move(edge: .top)),
                     removal: .opacity.combined(with: .move(edge: .leading))
                 ))
             }
         }
-        .padding(.horizontal, 4)
-        .padding(.bottom, 8)
+        .padding(.bottom, .spacingSM)  // 8pt
     }
 }
 
@@ -237,6 +332,7 @@ struct TasksSection: View {
 struct CompletedTasksSection: View {
     let tasks: [ThingsTask]
     let dataService: ThingsDataService
+    @ObservedObject var navigationController: NavigationController
 
     @State private var isExpanded = false
     @State private var deletedTaskIds: Set<String> = []
@@ -278,6 +374,7 @@ struct CompletedTasksSection: View {
                 ForEach(visibleTasks) { task in
                     TaskRowView(
                         task: task,
+                        navigationController: navigationController,
                         onToggle: { task in
                             dataService.toggleTask(task)
                         },
@@ -300,7 +397,6 @@ struct CompletedTasksSection: View {
                             }
                         }
                     )
-                    .padding(.horizontal, 4)
                     .transition(.asymmetric(
                         insertion: .opacity.combined(with: .scale(scale: 0.95)),
                         removal: .opacity.combined(with: .move(edge: .leading))
@@ -446,8 +542,8 @@ struct ErrorBannerView: View {
                 .buttonStyle(PlainButtonStyle())
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, .spacingLG)   // 16pt
+        .padding(.vertical, .spacingMD)     // 12pt
         .background(Color.orange.opacity(0.1))
     }
 }
@@ -548,8 +644,8 @@ struct StickyNewTaskButton: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.horizontal, .spacingLG)   // 16pt
+                .padding(.vertical, .spacingMD)     // 12pt
                 .transition(.asymmetric(
                     insertion: .opacity.combined(with: .move(edge: .bottom)),
                     removal: .opacity
@@ -573,8 +669,8 @@ struct StickyNewTaskButton: View {
 
                         Spacer()
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
+                    .padding(.horizontal, .spacingLG)   // 16pt
+                    .padding(.vertical, .spacingMD)     // 12pt
                 }
                 .buttonStyle(PlainButtonStyle())
                 .transition(.opacity)
